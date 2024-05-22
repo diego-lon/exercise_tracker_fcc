@@ -15,26 +15,16 @@ function timestampToDate(timestamp) {
 }
 
 function formatDate(dateString) {
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
   const [year, month, day] = dateString.split("-").map(Number);
   const dateObj = new Date(year, month - 1, day);
-  const formattedDate = `${dateObj.toDateString().slice(0, 3)} ${
-    months[dateObj.getMonth()]
-  } ${dateObj.getDate()} ${dateObj.getFullYear()}`;
-  return formattedDate;
+  return dateObj
+    .toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+    })
+    .replace(/,/g, "");
 }
 
 app.use(cors());
@@ -48,13 +38,12 @@ app.get("/", (req, res) => {
 app.post("/api/users", (req, res) => {
   const { username } = req.body;
   const _id = uuidv4();
-  const exist = users.some((us) => us.username === username);
-  if (exist) {
-    res.status(401).json({ error: "User already exists" });
-  } else {
-    users.push({ username, _id });
-    res.json({ username, _id });
-  }
+  users.push({ _id, username });
+  res.json({ _id, username });
+});
+
+app.get("/api/users", (req, res) => {
+  res.json(users);
 });
 
 app.post("/api/users/:_id/exercises", (req, res) => {
@@ -63,11 +52,11 @@ app.post("/api/users/:_id/exercises", (req, res) => {
   const user = users.find((us) => us._id === _id);
   if (user) {
     const exercise = {
-      username: user.username,
-      description,
-      duration,
-      date: date ? formatDate(date) : timestampToDate(Date.now()),
       _id,
+      username: user.username,
+      date: date ? formatDate(date) : timestampToDate(Date.now()),
+      duration: Number(duration),
+      description,
     };
     exercises.push(exercise);
     res.json(exercise);
@@ -78,8 +67,20 @@ app.post("/api/users/:_id/exercises", (req, res) => {
 
 app.get("/api/users/:_id/logs", (req, res) => {
   const { _id } = req.params;
+  const { from, to, limit } = req.query;
   const user = users.find((us) => us._id === _id);
-  const exercise = exercises.filter((ex) => ex._id === _id);
+  let exercise = exercises.filter((ex) => ex._id === _id);
+
+  if (from && to) {
+    exercise = exercise.filter((ex) => {
+      return (
+        new Date(ex.date) >= new Date(from) && new Date(ex.date) <= new Date(to)
+      );
+    });
+  }
+  if (limit) {
+    exercise = exercise.slice(0, Number(limit));
+  }
   if (user) {
     const log = {
       _id,
@@ -87,6 +88,10 @@ app.get("/api/users/:_id/logs", (req, res) => {
       count: exercise.length,
       log: exercise,
     };
+    if (from && to) {
+      Object.assign(log, { from: formatDate(from) });
+      Object.assign(log, { to: formatDate(to) });
+    }
     res.json(log);
   } else {
     res.status(401).json({ error: "User does not exists" });
